@@ -1,0 +1,28 @@
+# Environment variables (API keys, secrets)
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.js
+
+# IDE
+.DS_Store
+.vscode/
+*.swp
+*.swo
+
+# Output files (keep index but not individual reports)
+output/
+!output/index.html
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS files
+Thumbs.db

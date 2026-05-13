@@ -1,0 +1,20 @@
+{
+  "name": "tiktok-kol-agent",
+  "version": "1.0.0",
+  "description": "一个对话式的 AI 驱动的 TikTok 红人采集和建联工具。从产品理解、搜索策略、数据采集到优先级排序的端到端自动化。",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@types/node": "^25.7.0",
+    "axios": "^1.16.0",
+    "dotenv": "^17.4.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
+  }
+}
