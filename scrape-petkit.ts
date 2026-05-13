@@ -103,14 +103,16 @@ interface Influencer {
   verified: boolean;
   keyword_source: string;
   max_play_count: number;
+  like_count: number;
+  comment_count: number;
   data_collection_timestamp: string;
 }
 
 interface InfluencerWithScores extends Influencer {
   content_relevance: number;
-  audience_match: number;
+  creator_match: number;
   collab_potential: number;
-  growth_trend: number;
+  engagement_rate: number;
   overall_score: number;
   tier: string;
 }
@@ -179,6 +181,8 @@ async function searchVideos(keyword: string, count: number = 50): Promise<Influe
 
         const unique_id = author.unique_id;
         const play_count = awemeInfo.statistics?.play_count || 0;
+        const like_count = awemeInfo.statistics?.like_count || 0;
+        const comment_count = awemeInfo.statistics?.comment_count || 0;
 
         // 去重：同一博主保留播放量最高的视频
         if (
@@ -193,6 +197,8 @@ async function searchVideos(keyword: string, count: number = 50): Promise<Influe
             verified: false,
             keyword_source: keyword,
             max_play_count: play_count,
+            like_count: like_count,
+            comment_count: comment_count,
             data_collection_timestamp: new Date().toISOString()
           };
 
@@ -279,22 +285,42 @@ function scoreInfluencer(inf: Influencer, keyword_source: string): InfluencerWit
     content_relevance = Math.min(content_relevance + 10, 100);
   }
 
-  // 2. 粉丝匹配度（0-100）
-  let audience_match = 60;
+  // 2. 创作者画像匹配（0-100）
+  // 衡量博主本人是否属于目标用户群体
+  // 分三层：核心意图词 > 行为信号词 > 人口统计词
+  const core_intent_keywords = ['cat lover', 'cat mom', 'cat parent', 'pet parent', 'feline', 'multi-cat', 'multi pet'];
+  const behavioral_keywords = ['busy', 'professional', 'work from home', 'wfh', 'entrepreneur', 'full time'];
+  const demo_keywords = ['urban', 'girl', 'mom', 'woman', 'millennial', 'gen z'];
 
-  // 根据 Bio 推测粉丝类型
-  const target_keywords = ['busy', 'professional', 'cat lover', 'pet parent', 'urban', 'girl', 'mom', 'woman'];
-  let target_matches = 0;
-
-  for (const kw of target_keywords) {
-    if (bio_lower.includes(kw)) target_matches++;
+  let core_hits = 0;
+  for (const kw of core_intent_keywords) {
+    if (bio_lower.includes(kw)) core_hits++;
   }
 
-  if (target_matches >= 2) {
-    audience_match = 75 + Math.min(target_matches - 2, 25);
-  } else if (target_matches >= 1) {
-    audience_match = 65;
+  let behavioral_hits = 0;
+  for (const kw of behavioral_keywords) {
+    if (bio_lower.includes(kw)) behavioral_hits++;
   }
+
+  let demo_hits = 0;
+  for (const kw of demo_keywords) {
+    if (bio_lower.includes(kw)) demo_hits++;
+  }
+
+  // 基础分
+  let creator_match = 50;
+  // 核心意图词：每个 +15，最高 30
+  creator_match += Math.min(core_hits * 15, 30);
+  // 行为信号词：每个 +10，最高 20
+  creator_match += Math.min(behavioral_hits * 10, 20);
+  // 人口统计词：每个 +5，最高 15
+  creator_match += Math.min(demo_hits * 5, 15);
+  // 组合加分：同时有核心意图 + 行为信号 → 再 +10
+  if (core_hits > 0 && behavioral_hits > 0) {
+    creator_match += 10;
+  }
+
+  creator_match = Math.min(creator_match, 100);
 
   // 3. 合作潜力（0-100）
   let collab_potential = 50;
@@ -323,29 +349,30 @@ function scoreInfluencer(inf: Influencer, keyword_source: string): InfluencerWit
 
   collab_potential = Math.min(collab_potential, 100);
 
-  // 4. 增长趋势（0-100）
-  // 由于我们没有历史数据，这里用粉丝数和verified状态来推测
-  let growth_trend = 50;
-
-  if (inf.verified) {
-    growth_trend += 20;
-  }
-
-  if (inf.follower_count > 50000) {
-    growth_trend = 70;  // 大号通常比较稳定
-  } else if (inf.follower_count > 10000) {
-    growth_trend = 75;  // 中号通常处于增长期
-  } else if (inf.follower_count >= 2000) {
-    growth_trend = 78;  // 小号往往增长最快
+  // 4. 互动率（0-100）
+  // 互动率 = (点赞数 + 评论数) / 粉丝数 × 100
+  // 经验阈值：5%+ 为优秀，2-5% 为良好，<2% 为偏低
+  let engagement_rate = 0;
+  if (inf.follower_count > 0) {
+    const total_engagement = (inf.like_count || 0) + (inf.comment_count || 0);
+    const rate = (total_engagement / inf.follower_count) * 100;
+    if (rate >= 5) {
+      engagement_rate = 85 + Math.min(rate - 5, 15);  // 5% 以上：85-100
+    } else if (rate >= 2) {
+      engagement_rate = 65 + (rate - 2) * (20 / 3);   // 2-5%：65-85
+    } else {
+      engagement_rate = Math.min(30 + rate * 10, 60); // <2%：30-60
+    }
+    engagement_rate = Math.round(engagement_rate);
   }
 
   // 计算综合分（快速启动权重）
-  // 快速启动: content=30% audience=20% collab=40% growth=10%
+  // 快速启动: content=30% audience=20% collab=40% engagement=10%
   const overall_score = Math.round(
     content_relevance * 0.3 +
-    audience_match * 0.2 +
+    creator_match * 0.2 +
     collab_potential * 0.4 +
-    growth_trend * 0.1
+    engagement_rate * 0.1
   );
 
   // 分层
@@ -356,9 +383,9 @@ function scoreInfluencer(inf: Influencer, keyword_source: string): InfluencerWit
   return {
     ...inf,
     content_relevance,
-    audience_match,
+    creator_match,
     collab_potential,
-    growth_trend,
+    engagement_rate,
     overall_score,
     tier
   };
@@ -367,13 +394,13 @@ function scoreInfluencer(inf: Influencer, keyword_source: string): InfluencerWit
 // ============ 输出格式 ============
 
 function generateCSV(influencers: InfluencerWithScores[]): string {
-  let csv = '排序,账号名,昵称,粉丝数,邮箱,综合评分,内容相关度,粉丝匹配,合作潜力,增长趋势,层级,来源关键词,最高播放量,认证\n';
+  let csv = '排序,账号名,昵称,粉丝数,邮箱,综合评分,内容相关度,粉丝匹配,合作潜力,互动率,层级,来源关键词,最高播放量,认证\n';
 
   influencers.forEach((inf, idx) => {
     const email = inf.email || '';
     const bio_escaped = (inf.bio || '').replace(/"/g, '""').replace(/\n/g, ' ');
 
-    csv += `${idx + 1},"${inf.unique_id}","${inf.nickname}",${inf.follower_count},"${email}",${inf.overall_score},${inf.content_relevance},${inf.audience_match},${inf.collab_potential},${inf.growth_trend},"${inf.tier}","${inf.keyword_source}",${inf.max_play_count},"${inf.verified ? 'Yes' : 'No'}"\n`;
+    csv += `${idx + 1},"${inf.unique_id}","${inf.nickname}",${inf.follower_count},"${email}",${inf.overall_score},${inf.content_relevance},${inf.creator_match},${inf.collab_potential},${inf.engagement_rate},"${inf.tier}","${inf.keyword_source}",${inf.max_play_count},"${inf.verified ? 'Yes' : 'No'}"\n`;
   });
 
   return csv;
