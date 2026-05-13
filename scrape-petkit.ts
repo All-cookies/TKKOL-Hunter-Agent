@@ -164,15 +164,21 @@ async function searchVideos(keyword: string, count: number = 50): Promise<Influe
 
       for (const item of items) {
         const awemeInfo = item.aweme_info;
+
+        // 跳过无效数据
+        if (!awemeInfo || !awemeInfo.author) {
+          continue;
+        }
+
         const author = awemeInfo.author;
 
         // 过滤：粉丝数最少 2000
-        if (author.follower_count < CUSTOMIZE.MIN_FOLLOWER_COUNT) {
+        if (!author.follower_count || author.follower_count < CUSTOMIZE.MIN_FOLLOWER_COUNT) {
           continue;
         }
 
         const unique_id = author.unique_id;
-        const play_count = awemeInfo.statistics.play_count;
+        const play_count = awemeInfo.statistics?.play_count || 0;
 
         // 去重：同一博主保留播放量最高的视频
         if (
